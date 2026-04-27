@@ -28,13 +28,21 @@ app.post('/api/claude', async (req, res) => {
 });
 
 // ── Gemini proxy (FREE alternative) ────────────────────────────
-// Receives: { system, userMsg }
-// Returns:  { content: [{ text: '...' }] }  (same shape as Claude)
 app.post('/api/gemini', async (req, res) => {
   try {
+    const geminiKey = process.env.GEMINI_API_KEY;
+
+    // Debug: log first 8 chars of key so you can verify in Render logs
+    console.log('Gemini key loaded:', geminiKey ? geminiKey.slice(0,8)+'...' : 'NOT FOUND ❌');
+
+    if (!geminiKey) {
+      return res.status(500).json({ error: { message: 'GEMINI_API_KEY environment variable is not set on Render.' } });
+    }
+
     const { system, userMsg } = req.body;
     const prompt = `${system}\n\n${userMsg}`;
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
+
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -43,12 +51,22 @@ app.post('/api/gemini', async (req, res) => {
         generationConfig: { temperature: 0.3, maxOutputTokens: 2000 }
       })
     });
+
     const data = await response.json();
-    // Normalize to Claude-style response so the frontend doesn't change
+    console.log('Gemini response status:', response.status);
+
+    // If Gemini returned an error, forward it clearly
+    if (data.error) {
+      console.log('Gemini error:', JSON.stringify(data.error));
+      return res.status(400).json({ error: { message: `Gemini API error: ${data.error.message}` } });
+    }
+
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    if (!text) throw new Error(data?.error?.message || 'Gemini returned empty response');
+    if (!text) throw new Error('Gemini returned empty response');
+
     res.json({ content: [{ type: 'text', text }] });
   } catch (err) {
+    console.log('Proxy catch error:', err.message);
     res.status(500).json({ error: { message: err.message } });
   }
 });
