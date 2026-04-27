@@ -27,46 +27,38 @@ app.post('/api/claude', async (req, res) => {
   }
 });
 
-// ── Gemini proxy (FREE alternative) ────────────────────────────
+// ── Gemini proxy... pore grock dilam ekhon(FREE alternative) ────────────────────────────
 app.post('/api/gemini', async (req, res) => {
   try {
-    const geminiKey = process.env.GEMINI_API_KEY;
-
-    // Debug: log first 8 chars of key so you can verify in Render logs
-    console.log('Gemini key loaded:', geminiKey ? geminiKey.slice(0,8)+'...' : 'NOT FOUND ❌');
-
-    if (!geminiKey) {
-      return res.status(500).json({ error: { message: 'GEMINI_API_KEY environment variable is not set on Render.' } });
-    }
+    const groqKey = process.env.GROQ_API_KEY;
+    if (!groqKey) return res.status(500).json({ error: { message: 'GROQ_API_KEY not set.' } });
 
     const { system, userMsg } = req.body;
-    const prompt = `${system}\n\n${userMsg}`;
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`;
 
-    const response = await fetch(url, {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${groqKey}`
+      },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.3, maxOutputTokens: 2000 }
+        model: 'llama3-8b-8192',   // free & fast
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: userMsg }
+        ],
+        temperature: 0.3,
+        max_tokens: 2000
       })
     });
 
     const data = await response.json();
-    console.log('Gemini response status:', response.status);
+    if (data.error) return res.status(400).json({ error: { message: data.error.message } });
 
-    // If Gemini returned an error, forward it clearly
-    if (data.error) {
-      console.log('Gemini error:', JSON.stringify(data.error));
-      return res.status(400).json({ error: { message: `Gemini API error: ${data.error.message}` } });
-    }
-
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    if (!text) throw new Error('Gemini returned empty response');
-
+    const text = data.choices?.[0]?.message?.content || '';
     res.json({ content: [{ type: 'text', text }] });
+
   } catch (err) {
-    console.log('Proxy catch error:', err.message);
     res.status(500).json({ error: { message: err.message } });
   }
 });
